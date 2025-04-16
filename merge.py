@@ -38,8 +38,8 @@ def create_zip(files_dict):
     zip_buffer.seek(0)
     return zip_buffer
 
-st.set_page_config(page_title="Excel Merger & Splitter Dashboard", layout="wide")
-st.title("📊 Excel File Merger & Splitter")
+st.set_page_config(page_title="Excel Merger Dashboard", layout="wide")
+st.title("📊 Excel File Merger")
 st.markdown("Upload multiple Excel/CSV files and merge them into a single sheet. If the output has more than 10 lakh rows, it will split automatically into multiple files.")
 
 uploaded_files = st.file_uploader("📂 Upload Excel or CSV files", accept_multiple_files=True, type=['csv', 'xlsx', 'xls', 'xlsb'])
