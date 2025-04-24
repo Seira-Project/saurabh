@@ -3,25 +3,25 @@ import pandas as pd
 import io
 import zipfile
 
+# --------- UTILS ---------
 def read_file(uploaded_file):
     try:
         if uploaded_file.name.endswith('.csv'):
-            return pd.read_csv(uploaded_file)
+            return pd.read_csv(uploaded_file), uploaded_file.name
         elif uploaded_file.name.endswith(('.xlsx', '.xls')):
-            return pd.read_excel(uploaded_file)
+            return pd.read_excel(uploaded_file), uploaded_file.name
         elif uploaded_file.name.endswith('.xlsb'):
             import pyxlsb
-            return pd.read_excel(uploaded_file, engine='pyxlsb')
+            return pd.read_excel(uploaded_file, engine='pyxlsb'), uploaded_file.name
         else:
-            st.warning(f"Unsupported file format: {uploaded_file.name}")
-            return None
+            st.warning(f"❗ Unsupported file format: {uploaded_file.name}")
+            return None, uploaded_file.name
     except Exception as e:
-        st.error(f"Error reading {uploaded_file.name}: {e}")
-        return None
+        st.error(f"❌ Error reading {uploaded_file.name}: {e}")
+        return None, uploaded_file.name
 
-def split_dataframe(df, max_rows=10_00_000):
-    chunks = [df[i:i + max_rows] for i in range(0, len(df), max_rows)]
-    return chunks
+def split_dataframe(df, max_rows=1_000_000):
+    return [df[i:i + max_rows] for i in range(0, len(df), max_rows)]
 
 def generate_excel_bytes(df):
     output = io.BytesIO()
@@ -38,50 +38,89 @@ def create_zip(files_dict):
     zip_buffer.seek(0)
     return zip_buffer
 
+# --------- STREAMLIT UI ---------
 st.set_page_config(page_title="Excel Merger Dashboard", layout="wide")
-st.title("📊 Excel File Merger")
-st.markdown("Upload multiple Excel/CSV files and merge them into a single sheet. If the output has more than 10 lakh rows, it will split automatically into multiple files.")
+st.title("📊 Excel/CSV File Merger")
+st.caption("Upload multiple Excel or CSV files to merge into one dataset with preview, filtering, and export.")
 
-uploaded_files = st.file_uploader("📂 Upload Excel or CSV files", accept_multiple_files=True, type=['csv', 'xlsx', 'xls', 'xlsb'])
-output_files = {}
+uploaded_files = st.file_uploader("📂 Upload files", type=["csv", "xlsx", "xls", "xlsb"], accept_multiple_files=True)
 
 if uploaded_files:
-    st.info(f"Total files uploaded: {len(uploaded_files)}")
+    st.divider()
+    st.subheader("🧾 File Previews")
+
     merged_df = pd.DataFrame()
+    all_columns = set()
+    valid_files = 0
+
     for uploaded_file in uploaded_files:
-        df = read_file(uploaded_file)
+        df, name = read_file(uploaded_file)
         if df is not None:
-            st.success(f"✅ {uploaded_file.name} - {len(df)} rows")
+            valid_files += 1
+            st.expander(f"📁 {name} ({len(df)} rows, {len(df.columns)} cols)").write(df.head())
+            all_columns.update(df.columns)
             merged_df = pd.concat([merged_df, df], ignore_index=True)
+        else:
+            st.warning(f"⚠️ Skipping {name} due to read error.")
 
-    if not merged_df.empty:
-        st.subheader("✅ Merge Summary")
-        st.write(f"Total Rows After Merge: {len(merged_df)}")
+    if valid_files < 1:
+        st.stop()
 
-        # Splitting if necessary
+    st.success(f"✅ {valid_files} files merged successfully.")
+
+    st.divider()
+    st.subheader("⚙️ Merge Options")
+
+    # Column selection
+    selected_columns = st.multiselect(
+        "🧩 Select columns to keep (optional):",
+        options=list(all_columns),
+        default=list(all_columns)
+    )
+
+    # Remove duplicates
+    remove_duplicates = st.checkbox("🧹 Remove duplicate rows")
+
+    # Sort
+    sort_column = st.selectbox("🔀 Sort by column (optional):", options=["None"] + list(all_columns))
+    
+    # Apply filters to merged data
+    if selected_columns:
+        merged_df = merged_df[selected_columns]
+
+    if remove_duplicates:
+        merged_df = merged_df.drop_duplicates()
+
+    if sort_column != "None":
+        merged_df = merged_df.sort_values(by=sort_column)
+
+    st.info(f"📊 Final dataset: {len(merged_df)} rows × {len(merged_df.columns)} columns")
+
+    if len(merged_df) > 0:
+        st.subheader("💾 Download Merged Output")
         chunks = split_dataframe(merged_df)
+        output_files = {}
+
+        progress = st.progress(0)
         for idx, chunk in enumerate(chunks):
             excel_bytes = generate_excel_bytes(chunk)
             output_files[f"merged_output_part_{idx+1}.xlsx"] = excel_bytes
+            progress.progress((idx + 1) / len(chunks))
 
-        if output_files:
-            st.subheader("📥 Download Merged Files")
-            for name, content in output_files.items():
-                st.download_button(
-                    label=f"Download {name}",
-                    data=content,
-                    file_name=name,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
-            zip_buffer = create_zip(output_files)
+        for name, content in output_files.items():
             st.download_button(
-                label="📦 Download All as ZIP",
-                data=zip_buffer,
-                file_name="merged_outputs.zip",
-                mime="application/zip"
+                label=f"⬇️ Download {name}",
+                data=content,
+                file_name=name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-        else:
-            st.warning("No output files were generated. Please check the input files.")
+
+        zip_buffer = create_zip(output_files)
+        st.download_button(
+            label="📦 Download All as ZIP",
+            data=zip_buffer,
+            file_name="merged_outputs.zip",
+            mime="application/zip"
+        )
     else:
-        st.error("❌ No valid data found to merge. Please upload proper files.")
+        st.warning("⚠️ No rows available for export after applying filters.")
