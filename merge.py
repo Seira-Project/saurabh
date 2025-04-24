@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import io
 import zipfile
-import gc  # for memory cleanup
+import gc
+import plotly.express as px
 
 # --------- UTILS ---------
 def read_file(uploaded_file):
@@ -26,7 +27,7 @@ def split_dataframe(df, max_rows=1_000_000):
 
 def generate_excel_bytes(df):
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:  # lighter on memory
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False)
     output.seek(0)
     return output
@@ -59,7 +60,7 @@ if uploaded_files:
             st.expander(f"📁 {name} ({len(df)} rows)").write(df.head(10))
             all_columns.update(df.columns)
             merged_df = pd.concat([merged_df, df], ignore_index=True)
-            del df  # free memory
+            del df
             gc.collect()
         else:
             st.warning(f"⚠️ Skipped {name} due to error.")
@@ -87,14 +88,17 @@ if uploaded_files:
 
     if not merged_df.empty:
         st.subheader("💾 Download Merged Output")
-
         output_files = {}
+        chunk_sizes = []
+
         chunks = split_dataframe(merged_df)
+        st.markdown("🔄 Merging & Exporting Files...")
         progress = st.progress(0)
 
         for idx, chunk in enumerate(chunks):
             excel_bytes = generate_excel_bytes(chunk)
             output_files[f"merged_output_part_{idx+1}.xlsx"] = excel_bytes
+            chunk_sizes.append(len(chunk))
             del chunk
             gc.collect()
             progress.progress((idx + 1) / len(chunks))
@@ -114,5 +118,16 @@ if uploaded_files:
             file_name="merged_outputs.zip",
             mime="application/zip"
         )
+
+        # 🎯 Show chart of output distribution
+        st.subheader("📊 Output File Sizes")
+        fig = px.pie(
+            names=list(output_files.keys()),
+            values=chunk_sizes,
+            title="🧩 Merged Output Distribution",
+            hole=0.4
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
     else:
         st.warning("⚠️ No valid data to export.")
