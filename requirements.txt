@@ -1,7 +1,6 @@
-openpyxl
-XlsxWriter
 streamlit
 pandas
 openpyxl
 XlsxWriter
 pyxlsb
+
