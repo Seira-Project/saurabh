@@ -1,6 +1,6 @@
-streamlit
+streamlit>=1.30
 pandas
 openpyxl
-XlsxWriter
 pyxlsb
-
+XlsxWriter  # optional, fallback
+python==3.10
